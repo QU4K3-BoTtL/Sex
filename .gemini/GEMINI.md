@@ -1,8 +1,8 @@
-# SASOS Project Mandates (GEMINI.md)
+# Sex Project Mandates (GEMINI.md)
 
 ## 🌌 Project Vision
 
-SASOS is a **Single Address Space Operating System (SASOS)** microkernel designed for maximum performance and security on modern hardware.
+Sex is a **Single Address Space Operating System (Sex)** microkernel designed for maximum performance and security on modern hardware.
 
 ### Core Tenets:
 1.  **Tiny TCB:** Keep the kernel privileged code as small as possible (~5-8 kLOC).
@@ -39,7 +39,7 @@ SASOS is a **Single Address Space Operating System (SASOS)** microkernel designe
 
 1.  **Incremental Progress:** Small, verifiable commits. Each change should move us closer to the Phase goals.
 2.  **Documentation First:** Update `ARCHITECTURE.md` as new features are designed and implemented.
-3.  **Strict Review:** All code must be reviewed for safety and adherence to the SASOS vision.
+3.  **Strict Review:** All code must be reviewed for safety and adherence to the Sex vision.
 4.  **Minimal Dependencies:** In the kernel, use only essential `no_std` crates. Avoid heavy libraries that increase TCB size.
 
 ---

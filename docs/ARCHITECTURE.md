@@ -1,8 +1,8 @@
-# SASOS (Single Address Space Operating System) Architecture
+# Sex (Single Address Space Operating System) Architecture
 
 ## 🏛 Kernel Core
 
-SASOS is a **microkernel**, meaning it implements only the most fundamental primitives required to build a complete operating system. The goal is to keep the privileged code within a **Tiny Trusted Computing Base (TCB)** of roughly 5-8 kLOC.
+Sex is a **microkernel**, meaning it implements only the most fundamental primitives required to build a complete operating system. The goal is to keep the privileged code within a **Tiny Trusted Computing Base (TCB)** of roughly 5-8 kLOC.
 
 ### 🌟 Design Principles
 - **Global Single Virtual Address Space (SAS):** Every thread, process, and server shares the same 64-bit virtual address space.
@@ -15,11 +15,11 @@ SASOS is a **microkernel**, meaning it implements only the most fundamental prim
 ## 🔒 Memory & Protection Domains
 
 ### 🌏 Global Single Virtual Address Space (SAS)
-In SASOS, all data is mapped into a single 64-bit address space. This removes the need for page table switching (and the resulting TLB flushes) when moving between protection domains. Addresses are globally unique across the entire system.
+In Sex, all data is mapped into a single 64-bit address space. This removes the need for page table switching (and the resulting TLB flushes) when moving between protection domains. Addresses are globally unique across the entire system.
 
 ### 🛡 Protection Domains (PDs)
 Isolation is enforced by **Protection Domains (PDs)**. Each domain represents a logical set of permissions (Read, Write, Execute) over specific address ranges.
-- **Intel PKU / MPK:** SASOS uses Intel Memory Protection Keys (PKU) to assign a 4-bit "key" to each page. A hardware register (PKRU) defines the current thread's access rights for each of the 16 available keys.
+- **Intel PKU / MPK:** Sex uses Intel Memory Protection Keys (PKU) to assign a 4-bit "key" to each page. A hardware register (PKRU) defines the current thread's access rights for each of the 16 available keys.
 - **CHERI Capabilities:** Where hardware support exists, CHERI (Capability Hardware Enhanced RISC Instructions) provides fine-grained, spatial and temporal memory safety for every pointer.
 
 ---
@@ -40,7 +40,7 @@ For high-volume data transfer, servers can negotiate **Shared Memory Regions**. 
 
 ## 🗝 Capability System
 
-SASOS uses a **Sparse Capability** system, similar to seL4 and Mungi. A capability is an unforgeable token that proves its holder has the right to access a specific resource.
+Sex uses a **Sparse Capability** system, similar to seL4 and Mungi. A capability is an unforgeable token that proves its holder has the right to access a specific resource.
 
 ### 🛠 Capability Types
 - **Memory Capabilities:** Define access (R/W/X) to a range of virtual memory.
