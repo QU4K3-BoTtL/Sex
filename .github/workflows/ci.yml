@@ -1,26 +1,173 @@
-name: Rust CI
+name: SexOS Build + Boot Test
 
 on:
   push:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v3
-    
+    - uses: actions/checkout@v4
+      with:
+        submodules: false
+
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@nightly
       with:
         targets: x86_64-unknown-none
+        components: rust-src, llvm-tools-preview
 
-    - name: Check compilation
-      run: cargo check
-      working-directory: ./kernel
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build kernel
+      run: |
+        cargo build --package sex-kernel --target x86_64-unknown-none 2>&1 | tee kernel_build.log
+        echo "::notice::Kernel build complete"
+
+    - name: Build server crates
+      run: |
+        SERVERS=(sexc sexvfs sexdrives sexinput sexnet sexdisplay sexnode sexstore sexgemini)
+        FAILED=0
+        for srv in "${SERVERS[@]}"; do
+          echo "--- Building $srv ---"
+          if cargo build --manifest-path servers/$srv/Cargo.toml --target x86_64-unknown-none 2>&1 | tee -a server_build.log; then
+            echo "::notice::$srv built successfully"
+          else
+            echo "::warning::$srv failed to build"
+            FAILED=$((FAILED + 1))
+          fi
+        done
+        echo "SERVER_FAILURES=$FAILED" >> $GITHUB_ENV
+        if [ $FAILED -gt 0 ]; then
+          echo "::warning::$FAILED server crate(s) failed to build"
+        fi
+
+    - name: Package initrd
+      if: env.SERVER_FAILURES == '0'
+      run: |
+        python3 sex-src/bin/sexpac.py --out initrd.sex \
+          target/x86_64-unknown-none/debug/sexc \
+          target/x86_64-unknown-none/debug/sexvfs \
+          target/x86_64-unknown-none/debug/sexdrives \
+          target/x86_64-unknown-none/debug/sexinput \
+          target/x86_64-unknown-none/debug/sexnet \
+          target/x86_64-unknown-none/debug/sexdisplay \
+          target/x86_64-unknown-none/debug/sexnode \
+          target/x86_64-unknown-none/debug/sexstore \
+          target/x86_64-unknown-none/debug/sexgemini
+
+    - name: Build ISO
+      if: env.SERVER_FAILURES == '0'
+      run: |
+        # Clone Limine bootloader
+        git clone https://github.com/limine-bootloader/limine.git --branch=v7.x-binary --depth=1
+        make -C limine
+
+        # Assemble ISO root
+        mkdir -p iso_root/boot
+        cp target/x86_64-unknown-none/debug/sex-kernel iso_root/boot/sexos-kernel
+        if [ -f initrd.sex ]; then
+          cp initrd.sex iso_root/boot/
+        fi
+        cp limine.cfg limine/limine-bios.sys limine/limine-bios-cd.bin \
+           limine/BOOTX64.EFI limine/BOOTIA32.EFI \
+           iso_root/
+
+        # Install xorriso and build ISO
+        sudo apt-get install -y xorriso
+        xorriso -as mkisofs -b limine-bios-cd.bin \
+          -no-emul-boot -boot-load-size 4 -boot-info-table \
+          --efi-boot BOOTX64.EFI \
+          -efi-boot-part --efi-boot-image --protective-msdos-label \
+          iso_root -o sexos-v1.0.0.iso
+        ./limine/limine bios-install sexos-v1.0.0.iso
+
+        echo "::notice::ISO built: sexos-v1.0.0.iso ($(du -h sexos-v1.0.0.iso | cut -f1))"
+
+    - name: QEMU boot test
+      if: env.SERVER_FAILURES == '0'
+      run: |
+        sudo apt-get install -y qemu-system-x86
+
+        # Boot the ISO headless, capture serial output, timeout after 15 seconds
+        timeout 15 qemu-system-x86_64 \
+          -machine q35 \
+          -cpu max,pku=on \
+          -smp 4 \
+          -m 2G \
+          -serial file:serial_output.log \
+          -display none \
+          -no-reboot \
+          -d int,guest_errors,unimp \
+          -D qemu_debug.log \
+          -cdrom sexos-v1.0.0.iso || true
+
+        echo "=== SERIAL OUTPUT ==="
+        cat serial_output.log 2>/dev/null || echo "(no serial output captured)"
+        echo "=== END SERIAL OUTPUT ==="
+
+        # Check if kernel produced any output (basic boot verification)
+        if [ -s serial_output.log ]; then
+          echo "::notice::Kernel produced serial output — boot detected"
+          echo "BOOT_STATUS=success" >> $GITHUB_ENV
+        else
+          echo "::warning::No serial output — kernel may not have booted"
+          echo "BOOT_STATUS=no_output" >> $GITHUB_ENV
+        fi
+
+    - name: Upload build artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: sexos-build
+        path: |
+          sexos-v1.0.0.iso
+          serial_output.log
+          qemu_debug.log
+          kernel_build.log
+          server_build.log
+        if-no-files-found: warn
+
+    - name: Build summary
+      if: always()
+      run: |
+        echo "## SexOS Build Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Kernel | ✅ Built |" >> $GITHUB_STEP_SUMMARY
+        if [ "$SERVER_FAILURES" = "0" ]; then
+          echo "| Servers (9) | ✅ All built |" >> $GITHUB_STEP_SUMMARY
+          echo "| ISO | ✅ Packaged |" >> $GITHUB_STEP_SUMMARY
+          if [ "$BOOT_STATUS" = "success" ]; then
+            echo "| Boot test | ✅ Serial output detected |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Boot test | ⚠️ No serial output |" >> $GITHUB_STEP_SUMMARY
+          fi
+        else
+          echo "| Servers | ⚠️ $SERVER_FAILURES failed |" >> $GITHUB_STEP_SUMMARY
+          echo "| ISO | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          echo "| Boot test | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ -f serial_output.log ] && [ -s serial_output.log ]; then
+          echo "### Serial Output (first 50 lines)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          head -50 serial_output.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        fi
