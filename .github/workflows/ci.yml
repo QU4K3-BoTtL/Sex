@@ -97,6 +97,7 @@ jobs:
            iso_root/
 
         # Install xorriso and build ISO
+        sudo apt-get update -qq
         sudo apt-get install -y xorriso
         xorriso -as mkisofs -b limine-bios-cd.bin \
           -no-emul-boot -boot-load-size 4 -boot-info-table \
@@ -110,6 +111,7 @@ jobs:
     - name: QEMU boot test
       if: env.SERVER_FAILURES == '0'
       run: |
+        sudo apt-get update -qq
         sudo apt-get install -y qemu-system-x86
 
         # Boot the ISO headless, capture serial output, timeout after 15 seconds
