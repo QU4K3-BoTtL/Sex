@@ -60,6 +60,14 @@ jobs:
     - name: Package initrd
       if: env.SERVER_FAILURES == '0'
       run: |
+        # sexpac.py expects 'rust-strip' — symlink from llvm-tools
+        LLVM_STRIP=$(find ~/.rustup -name 'llvm-strip' -type f 2>/dev/null | head -1)
+        if [ -n "$LLVM_STRIP" ]; then
+          sudo ln -sf "$LLVM_STRIP" /usr/local/bin/rust-strip
+        else
+          # Fallback: use system strip
+          sudo ln -sf /usr/bin/strip /usr/local/bin/rust-strip
+        fi
         python3 sex-src/bin/sexpac.py --out initrd.sex \
           target/x86_64-unknown-none/debug/sexc \
           target/x86_64-unknown-none/debug/sexvfs \
